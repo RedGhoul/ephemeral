@@ -125,9 +125,24 @@ Files changed: `src/app.jsx`, `src/styles/global.css`. Build ~6.9 KB gzipped JS.
 Note: a real two-phone WebRTC handshake can't be exercised headlessly here;
 verified via build + dev-server module-graph smoke test. Confirm on two phones.
 
-### ⬜ Phase 4 — Chat UI
-- Message bubbles, text input, send-on-enter, auto-scroll.
-- Typing indicator, timestamps. All state in memory only.
+### ✅ Phase 4 — Chat UI
+- `src/components/Chat.jsx`: the connected conversation — scrollable message
+  list of bubbles (mine vs theirs, with local timestamps) + composer. It renders
+  both the `<main>` (messages) and `<footer>` (composer); other states render a
+  centered pane with no composer.
+- Composer is a `<form>` → Enter sends (with `enterkeyhint="send"`), send button
+  disabled while empty; input kept at 16px to dodge iOS focus auto-zoom.
+- List auto-scrolls to the newest message; long words/URLs wrap; sender line
+  breaks preserved (`white-space: pre-wrap`).
+- `app.jsx`/`ChatRoom` holds the message list in memory: `subscribe` appends
+  incoming (parsed defensively), `handleSend` echoes locally + `send`s `{text,ts}`
+  over the DataChannel. Closing/reloading the tab drops everything — ephemeral
+  by construction; text is rendered via Preact (auto-escaped), no XSS surface.
+- `useConnection`: `send`/`subscribe` memoized (`useCallback`) so the message
+  subscription doesn't churn on every render. Build ~31.2 KB gzipped JS.
+
+Deferred from this phase: a typing indicator (needs a second Trystero action +
+debounce) — slot it in during Phase 7 polish.
 
 ### ⬜ Phase 5 — Ephemerality hardening
 - Assert no persistence APIs are used for messages.

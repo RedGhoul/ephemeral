@@ -1,5 +1,5 @@
 /**
- * App shell + room/link flow (phase 2) + P2P connection (phase 3).
+ * App shell + room/link flow (phase 2) + P2P connection (phase 3) + chat (phase 4).
  *
  * Two top-level states, decided from the URL fragment and in-memory choices —
  * nothing is persisted:
@@ -7,14 +7,12 @@
  *   home → no room key yet. "Start a chat" mints a high-entropy key, drops it in
  *          the `#fragment`, and enters a room as the host.
  *   room → a key is present (we minted it, or we opened someone's link). We join
- *          the Trystero room and render by live connection status.
+ *          the Trystero room and render by live connection status; once a peer is
+ *          on the DataChannel, the live chat UI takes over.
  *
- * The connection (`useConnection`) opens a WebRTC DataChannel between the two
- * phones; the host/guest difference is only which copy shows while connecting.
- * The live chat UI (message bubbles, composer) lands in phase 4 and slots into
- * the connected state below.
+ * Messages live only in memory (`messages` state below). Reload or close = gone.
  */
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
   generateRoomKey,
   readRoomKeyFromUrl,
@@ -23,6 +21,7 @@ import {
 } from './room.js';
 import { useConnection } from './useConnection.js';
 import { ShareLink } from './components/ShareLink.jsx';
+import { Chat } from './components/Chat.jsx';
 
 export function App() {
   // Decide once, from the URL. A key already in the fragment means we arrived
@@ -45,17 +44,11 @@ export function App() {
         <span class="tagline">nothing is saved</span>
       </header>
 
-      <main class="body">
-        {roomKey ? (
-          <ChatRoom roomKey={roomKey} isHost={isHost} />
-        ) : (
-          <Home onStart={startChat} />
-        )}
-      </main>
-
-      <footer class="composer">
-        <div class="composer-hint">composer goes here</div>
-      </footer>
+      {roomKey ? (
+        <ChatRoom roomKey={roomKey} isHost={isHost} />
+      ) : (
+        <Home onStart={startChat} />
+      )}
     </div>
   );
 }
@@ -63,37 +56,75 @@ export function App() {
 /** Landing state: a single call-to-action that mints a room. */
 function Home({ onStart }) {
   return (
-    <div class="pane pane-center">
-      <p class="pane-title">Start a private chat</p>
-      <p class="pane-sub">
-        Send the link to one person. The chat is direct, anonymous, and vanishes
-        when you close the tab — nothing is ever stored.
-      </p>
-      <button type="button" class="btn btn-primary btn-lg" onClick={onStart}>
-        Start a chat
-      </button>
-    </div>
+    <main class="body">
+      <div class="pane pane-center">
+        <p class="pane-title">Start a private chat</p>
+        <p class="pane-sub">
+          Send the link to one person. The chat is direct, anonymous, and
+          vanishes when you close the tab — nothing is ever stored.
+        </p>
+        <button type="button" class="btn btn-primary btn-lg" onClick={onStart}>
+          Start a chat
+        </button>
+      </div>
+    </main>
   );
 }
 
 /**
- * In-room view. Joins the P2P room and renders by live connection status. The
- * host keeps the share link visible until the other person arrives.
+ * In-room view. Joins the P2P room, accumulates messages in memory, and renders
+ * by live connection status. The host keeps the share link visible until the
+ * other person arrives; once connected, the chat UI takes over.
  */
 function ChatRoom({ roomKey, isHost }) {
-  const { status } = useConnection(roomKey);
-  const link = shareableLink(roomKey);
+  const { status, send, subscribe } = useConnection(roomKey);
+  const [messages, setMessages] = useState([]);
 
-  switch (status) {
-    case 'connected':
-      return <Connected />;
-    case 'left':
-      return <PeerLeft isHost={isHost} link={link} />;
-    case 'error':
-      return <ConnectionError />;
-    default: // 'connecting'
-      return isHost ? <HostWaiting link={link} /> : <GuestJoining />;
+  // Subscribe once (send/subscribe are stable). Incoming payloads are from the
+  // one peer holding the link; parse defensively and never trust shape blindly.
+  useEffect(
+    () =>
+      subscribe((payload) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            text: String(payload?.text ?? ''),
+            ts: Number(payload?.ts) || Date.now(),
+            mine: false,
+          },
+        ]);
+      }),
+    [subscribe],
+  );
+
+  function handleSend(text) {
+    const ts = Date.now();
+    send({ text, ts });
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), text, ts, mine: true },
+    ]);
   }
+
+  if (status === 'connected') {
+    return <Chat messages={messages} onSend={handleSend} />;
+  }
+
+  // Non-connected states are a single centered pane, no composer.
+  return (
+    <main class="body">
+      {status === 'left' ? (
+        <PeerLeft isHost={isHost} link={shareableLink(roomKey)} />
+      ) : status === 'error' ? (
+        <ConnectionError />
+      ) : isHost ? (
+        <HostWaiting link={shareableLink(roomKey)} />
+      ) : (
+        <GuestJoining />
+      )}
+    </main>
+  );
 }
 
 /** Host, connecting: hand out the link and wait for the other person. */
@@ -130,20 +161,6 @@ function GuestJoining() {
   );
 }
 
-/** Both peers are on a direct DataChannel. Chat UI arrives in phase 4. */
-function Connected() {
-  return (
-    <div class="pane pane-center">
-      <span class="status-dot status-dot-ok" aria-hidden="true" />
-      <p class="pane-title">Connected</p>
-      <p class="pane-sub">
-        You're on a direct, encrypted link with the other person. Messaging lands
-        next.
-      </p>
-    </div>
-  );
-}
-
 /** The other peer dropped. 1:1 means the chat is over. */
 function PeerLeft({ isHost, link }) {
   return (
@@ -151,7 +168,8 @@ function PeerLeft({ isHost, link }) {
       <span class="status-dot status-dot-off" aria-hidden="true" />
       <p class="pane-title">The other person left</p>
       <p class="pane-sub">
-        Nothing was saved. {isHost
+        Nothing was saved.{' '}
+        {isHost
           ? 'Share the link again to reconnect, or start fresh.'
           : 'Ask for a new link to start again.'}
       </p>

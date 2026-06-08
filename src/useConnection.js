@@ -14,7 +14,7 @@
  *
  * Strictly 1:1 for now (see PLAN: group chat is v2). Nothing is persisted.
  */
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { joinRoom } from 'trystero/nostr';
 
 /** Namespaces our rooms on the shared relays. Distinct from the room key. */
@@ -62,12 +62,13 @@ export function useConnection(roomKey) {
     };
   }, [roomKey]);
 
-  const send = (payload) => sendRef.current?.(payload);
+  // Stable identities so consumers can depend on them without re-subscribing.
+  const send = useCallback((payload) => sendRef.current?.(payload), []);
 
-  const subscribe = (fn) => {
+  const subscribe = useCallback((fn) => {
     handlersRef.current.add(fn);
     return () => handlersRef.current.delete(fn);
-  };
+  }, []);
 
   return { status, send, subscribe };
 }
