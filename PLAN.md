@@ -107,9 +107,23 @@ phone on the same Wi-Fi.
 Files added: `src/room.js`, `src/components/ShareLink.jsx`.
 Files changed: `src/app.jsx`, `src/styles/global.css`. Build ~6.9 KB gzipped JS.
 
-### 🔜 Phase 3 — P2P connection
-- Wire up Trystero: join room from link, open DataChannel.
-- Surface connection status (connecting / connected / peer left).
+### ✅ Phase 3 — P2P connection
+- `src/useConnection.js`: a hook that joins a Trystero room (`trystero/nostr`,
+  serverless signaling over public Nostr relays) keyed by the URL room key and
+  opens a WebRTC DataChannel directly to the other peer.
+- The room key doubles as the Trystero `password`, so the SDP/ICE handshake is
+  encrypted on the relays; the data path is DTLS-encrypted by WebRTC itself.
+- Surfaces `status`: `connecting → connected → left` (plus `error` if signaling
+  can't start), driven by `onPeerJoin` / `onPeerLeave`. Strictly 1:1: once the
+  only peer leaves we treat the chat as over.
+- Exposes `send` / `subscribe` as the message surface the phase-4 chat UI
+  consumes. Connection torn down (`room.leave()`) on unmount.
+- `app.jsx` now routes **home → room**, and inside a room renders by live
+  status: host-waiting (link still shown) / guest-joining / connected /
+  peer-left / error. Bundle ~30.6 KB gzipped JS (Trystero signaling included).
+
+Note: a real two-phone WebRTC handshake can't be exercised headlessly here;
+verified via build + dev-server module-graph smoke test. Confirm on two phones.
 
 ### ⬜ Phase 4 — Chat UI
 - Message bubbles, text input, send-on-enter, auto-scroll.

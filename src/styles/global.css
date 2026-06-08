@@ -231,6 +231,23 @@ body {
   }
 }
 
+/* --- Connection status dot ------------------------------------------------- */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.status-dot-ok {
+  background: #36d399;
+  box-shadow: 0 0 0 4px rgba(54, 211, 153, 0.18);
+}
+
+.status-dot-off {
+  background: var(--text-dim);
+}
+
 /* --- Composer / footer ----------------------------------------------------- */
 .composer {
   flex: 0 0 auto;

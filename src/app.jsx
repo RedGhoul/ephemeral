@@ -1,18 +1,18 @@
 /**
- * App shell + room/link flow (phase 2).
+ * App shell + room/link flow (phase 2) + P2P connection (phase 3).
  *
- * Three states, decided purely from the URL fragment and in-memory choices —
+ * Two top-level states, decided from the URL fragment and in-memory choices —
  * nothing is persisted:
  *
- *   home  → no room key yet. Offer "Start a chat", which mints a high-entropy
- *           key, drops it in the `#fragment`, and moves to the host state.
- *   host  → we created the room. Show the shareable link + copy/share, and a
- *           "waiting for the other person…" state.
- *   guest → we opened someone else's link. The key is read from the fragment;
- *           show a "joining…" state.
+ *   home → no room key yet. "Start a chat" mints a high-entropy key, drops it in
+ *          the `#fragment`, and enters a room as the host.
+ *   room → a key is present (we minted it, or we opened someone's link). We join
+ *          the Trystero room and render by live connection status.
  *
- * The actual P2P connection (Trystero / WebRTC DataChannel) lands in phase 3 and
- * slots into the host/guest states below; the live chat UI lands in phase 4.
+ * The connection (`useConnection`) opens a WebRTC DataChannel between the two
+ * phones; the host/guest difference is only which copy shows while connecting.
+ * The live chat UI (message bubbles, composer) lands in phase 4 and slots into
+ * the connected state below.
  */
 import { useState } from 'preact/hooks';
 import {
@@ -21,11 +21,12 @@ import {
   writeRoomKeyToUrl,
   shareableLink,
 } from './room.js';
+import { useConnection } from './useConnection.js';
 import { ShareLink } from './components/ShareLink.jsx';
 
 export function App() {
-  // Decide the initial state once, from the URL. A key already in the fragment
-  // means we arrived via someone's link → guest. Otherwise we start at home.
+  // Decide once, from the URL. A key already in the fragment means we arrived
+  // via someone's link → join as guest. Otherwise we start at home.
   const initialKey = readRoomKeyFromUrl();
   const [roomKey, setRoomKey] = useState(initialKey);
   const [isHost, setIsHost] = useState(false);
@@ -37,8 +38,6 @@ export function App() {
     setIsHost(true);
   }
 
-  const mode = roomKey ? (isHost ? 'host' : 'guest') : 'home';
-
   return (
     <div class="screen">
       <header class="topbar">
@@ -47,9 +46,11 @@ export function App() {
       </header>
 
       <main class="body">
-        {mode === 'home' && <Home onStart={startChat} />}
-        {mode === 'host' && <HostWaiting roomKey={roomKey} />}
-        {mode === 'guest' && <GuestJoining />}
+        {roomKey ? (
+          <ChatRoom roomKey={roomKey} isHost={isHost} />
+        ) : (
+          <Home onStart={startChat} />
+        )}
       </main>
 
       <footer class="composer">
@@ -75,9 +76,28 @@ function Home({ onStart }) {
   );
 }
 
-/** Host state: hand out the link, and wait for the other person to join. */
-function HostWaiting({ roomKey }) {
+/**
+ * In-room view. Joins the P2P room and renders by live connection status. The
+ * host keeps the share link visible until the other person arrives.
+ */
+function ChatRoom({ roomKey, isHost }) {
+  const { status } = useConnection(roomKey);
   const link = shareableLink(roomKey);
+
+  switch (status) {
+    case 'connected':
+      return <Connected />;
+    case 'left':
+      return <PeerLeft isHost={isHost} link={link} />;
+    case 'error':
+      return <ConnectionError />;
+    default: // 'connecting'
+      return isHost ? <HostWaiting link={link} /> : <GuestJoining />;
+  }
+}
+
+/** Host, connecting: hand out the link and wait for the other person. */
+function HostWaiting({ link }) {
   return (
     <div class="pane pane-center">
       <p class="pane-title">Your chat is ready</p>
@@ -95,7 +115,7 @@ function HostWaiting({ roomKey }) {
   );
 }
 
-/** Guest state: we opened a link; connection wiring arrives in phase 3. */
+/** Guest, connecting: we opened a link and are dialing the other peer. */
 function GuestJoining() {
   return (
     <div class="pane pane-center">
@@ -105,6 +125,50 @@ function GuestJoining() {
       </div>
       <p class="pane-sub">
         Connecting you directly to the other person. Keep this tab open.
+      </p>
+    </div>
+  );
+}
+
+/** Both peers are on a direct DataChannel. Chat UI arrives in phase 4. */
+function Connected() {
+  return (
+    <div class="pane pane-center">
+      <span class="status-dot status-dot-ok" aria-hidden="true" />
+      <p class="pane-title">Connected</p>
+      <p class="pane-sub">
+        You're on a direct, encrypted link with the other person. Messaging lands
+        next.
+      </p>
+    </div>
+  );
+}
+
+/** The other peer dropped. 1:1 means the chat is over. */
+function PeerLeft({ isHost, link }) {
+  return (
+    <div class="pane pane-center">
+      <span class="status-dot status-dot-off" aria-hidden="true" />
+      <p class="pane-title">The other person left</p>
+      <p class="pane-sub">
+        Nothing was saved. {isHost
+          ? 'Share the link again to reconnect, or start fresh.'
+          : 'Ask for a new link to start again.'}
+      </p>
+      {isHost && <ShareLink link={link} />}
+    </div>
+  );
+}
+
+/** Signaling failed to even start. */
+function ConnectionError() {
+  return (
+    <div class="pane pane-center">
+      <span class="status-dot status-dot-off" aria-hidden="true" />
+      <p class="pane-title">Couldn't connect</p>
+      <p class="pane-sub">
+        We couldn't reach the signaling relays. Check your connection and reload
+        the link.
       </p>
     </div>
   );
