@@ -7,7 +7,7 @@ peer-to-peer.
 
 > **For future sessions:** this file is the source of truth for decisions and
 > progress. Update the **Phase status** section as work lands. Development
-> happens on branch `claude/magical-knuth-FAtRD`.
+> happens on branch `claude/relaxed-faraday-ssgj7f`.
 
 ---
 
@@ -91,13 +91,23 @@ Files: `index.html`, `package.json`, `vite.config.js`, `.gitignore`,
 Run locally: `npm install && npm run dev`, then open the printed LAN URL on a
 phone on the same Wi-Fi.
 
-### 🔜 Phase 2 — Room + link flow
-- "Start a chat" generates a high-entropy room key → URL `#fragment`.
-- Render shareable link with copy + native share-sheet (`navigator.share`) button.
-- "Waiting for the other person…" state.
-- Joining via an existing link reads the room key from the fragment.
+### ✅ Phase 2 — Room + link flow
+- App routes between three in-memory states decided from the URL fragment:
+  **home** (no key), **host** (we minted the room), **guest** (opened a link).
+- "Start a chat" mints a 128-bit room key via `crypto.getRandomValues`,
+  base64url-encoded, and writes it to the URL `#fragment` with
+  `history.replaceState` (no history entry).
+- Shareable link rendered with a tap-to-copy field, a Clipboard-API copy button
+  (with "Copied ✓" feedback + manual-select fallback), and the native share
+  sheet (`navigator.share`) when available.
+- "Waiting for the other person…" (host) and "Joining the chat…" (guest)
+  states — placeholders that the phase-3 connection wires into.
+- Fragment never hits a server; the link is the capability. No persistence APIs.
 
-### ⬜ Phase 3 — P2P connection
+Files added: `src/room.js`, `src/components/ShareLink.jsx`.
+Files changed: `src/app.jsx`, `src/styles/global.css`. Build ~6.9 KB gzipped JS.
+
+### 🔜 Phase 3 — P2P connection
 - Wire up Trystero: join room from link, open DataChannel.
 - Surface connection status (connecting / connected / peer left).
 
@@ -121,7 +131,7 @@ phone on the same Wi-Fi.
 
 ## Operational notes
 
-- **Branch:** all work on `claude/magical-knuth-FAtRD`. Commit + push when a
+- **Branch:** all work on `claude/relaxed-faraday-ssgj7f`. Commit + push when a
   phase completes.
 - **TURN credentials** will live in `.env` (gitignored). An `.env.example` will
   document the required keys when Phase 6 lands. Cloudflare TURN free tier is the
