@@ -17,6 +17,7 @@ import {
   generateRoomKey,
   readRoomKeyFromUrl,
   writeRoomKeyToUrl,
+  clearRoomKeyFromUrl,
   shareableLink,
 } from './room.js';
 import { useConnection } from './useConnection.js';
@@ -45,6 +46,13 @@ export function App() {
     setIsHost(true);
   }
 
+  // Drop the spent room: clear the fragment and fall back to a blank home.
+  function reset() {
+    clearRoomKeyFromUrl();
+    setRoomKey(null);
+    setIsHost(false);
+  }
+
   return (
     <div class="screen">
       <header class="topbar">
@@ -53,7 +61,7 @@ export function App() {
       </header>
 
       {roomKey ? (
-        <ChatRoom roomKey={roomKey} isHost={isHost} />
+        <ChatRoom roomKey={roomKey} isHost={isHost} onReset={reset} />
       ) : (
         <Home onStart={startChat} />
       )}
@@ -84,7 +92,7 @@ function Home({ onStart }) {
  * by live connection status. The host keeps the share link visible until the
  * other person arrives; once connected, the chat UI takes over.
  */
-function ChatRoom({ roomKey, isHost }) {
+function ChatRoom({ roomKey, isHost, onReset }) {
   const { status, send, subscribe } = useConnection(roomKey);
   const [messages, setMessages] = useState([]);
 
@@ -106,6 +114,13 @@ function ChatRoom({ roomKey, isHost }) {
     [subscribe],
   );
 
+  // Ephemerality: the moment a chat ends (peer left / idle / full / error), wipe
+  // the in-memory transcript so nothing lingers even in this live tab.
+  const isOver = status !== 'connecting' && status !== 'connected';
+  useEffect(() => {
+    if (isOver) setMessages([]);
+  }, [isOver]);
+
   function handleSend(text) {
     const ts = Date.now();
     send({ text, ts });
@@ -123,9 +138,13 @@ function ChatRoom({ roomKey, isHost }) {
   return (
     <main class="body">
       {status === 'left' ? (
-        <PeerLeft isHost={isHost} link={shareableLink(roomKey)} />
+        <PeerLeft onReset={onReset} />
+      ) : status === 'full' ? (
+        <RoomFull onReset={onReset} />
+      ) : status === 'ended' ? (
+        <Ended onReset={onReset} />
       ) : status === 'error' ? (
-        <ConnectionError />
+        <ConnectionError onReset={onReset} />
       ) : isHost ? (
         <HostWaiting link={shareableLink(roomKey)} />
       ) : (
@@ -169,33 +188,71 @@ function GuestJoining() {
   );
 }
 
-/** The other peer dropped. 1:1 means the chat is over. */
-function PeerLeft({ isHost, link }) {
+/** A spent room is terminal — single-use links don't reconnect. */
+function StartOver({ onReset }) {
+  return (
+    <button type="button" class="btn btn-primary" onClick={onReset}>
+      Start a new chat
+    </button>
+  );
+}
+
+/** The other peer dropped. Single-use ⇒ the chat is over, no reconnect. */
+function PeerLeft({ onReset }) {
   return (
     <div class="pane pane-center">
       <span class="status-dot status-dot-off" aria-hidden="true" />
       <p class="pane-title">The other person left</p>
       <p class="pane-sub">
-        Nothing was saved.{' '}
-        {isHost
-          ? 'Share the link again to reconnect, or start fresh.'
-          : 'Ask for a new link to start again.'}
+        The chat is over and nothing was saved. This link is spent — start a new
+        one to chat again.
       </p>
-      {isHost && <ShareLink link={link} />}
+      <StartOver onReset={onReset} />
+    </div>
+  );
+}
+
+/** We opened a link whose pair has already formed. */
+function RoomFull({ onReset }) {
+  return (
+    <div class="pane pane-center">
+      <span class="status-dot status-dot-off" aria-hidden="true" />
+      <p class="pane-title">This chat is already in use</p>
+      <p class="pane-sub">
+        These links are for one pair only. Ask for a fresh link, or start your
+        own chat.
+      </p>
+      <StartOver onReset={onReset} />
+    </div>
+  );
+}
+
+/** Torn down after a stretch of inactivity. */
+function Ended({ onReset }) {
+  return (
+    <div class="pane pane-center">
+      <span class="status-dot status-dot-off" aria-hidden="true" />
+      <p class="pane-title">Chat ended</p>
+      <p class="pane-sub">
+        Closed after a while idle, so nothing was left hanging around. Nothing
+        was saved.
+      </p>
+      <StartOver onReset={onReset} />
     </div>
   );
 }
 
 /** Signaling failed to even start. */
-function ConnectionError() {
+function ConnectionError({ onReset }) {
   return (
     <div class="pane pane-center">
       <span class="status-dot status-dot-off" aria-hidden="true" />
       <p class="pane-title">Couldn't connect</p>
       <p class="pane-sub">
-        We couldn't reach the signaling relays. Check your connection and reload
-        the link.
+        We couldn't reach the signaling relays. Check your connection and try
+        again.
       </p>
+      <StartOver onReset={onReset} />
     </div>
   );
 }

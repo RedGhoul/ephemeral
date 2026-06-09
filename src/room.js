@@ -46,6 +46,16 @@ export function writeRoomKeyToUrl(key) {
   window.history.replaceState(null, '', `${pathname}${search}#${key}`);
 }
 
+/**
+ * Strip the room key from the URL so a reload lands back on a blank home screen.
+ * Used when a chat ends (peer left / idle teardown / start over): the spent link
+ * shouldn't linger in the address bar.
+ */
+export function clearRoomKeyFromUrl() {
+  const { pathname, search } = window.location;
+  window.history.replaceState(null, '', `${pathname}${search}`);
+}
+
 /** Build the full shareable link for a given room key. */
 export function shareableLink(key) {
   const { origin, pathname } = window.location;

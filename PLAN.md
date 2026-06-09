@@ -148,10 +148,32 @@ verified via build + dev-server module-graph smoke test. Confirm on two phones.
 Deferred from this phase: a typing indicator (needs a second Trystero action +
 debounce) — slot it in during Phase 7 polish.
 
-### ⬜ Phase 5 — Ephemerality hardening
-- Assert no persistence APIs are used for messages.
-- Optional single-use links (room consumed after first pair connects).
-- Idle auto-teardown so a re-visit is provably blank.
+### ✅ Phase 5 — Ephemerality hardening
+- **No-persistence assertion**: `scripts/check-no-persistence.mjs` scans `src/`
+  (comments stripped) for `localStorage` / `sessionStorage` / `indexedDB` /
+  `openDatabase` / `document.cookie` / `caches` and fails on any hit. Wired as a
+  `prebuild` step so `npm run build` can't ship a regression. (Confirmed Trystero
+  itself touches none of these either.)
+- **Single-use / strict 1:1** in `useConnection`: bind to the first peer and
+  only exchange messages with that peer — **targeted sends + sender filtering**,
+  so a third party who opens the same link joins the relay topic but receives
+  nothing (can't eavesdrop). A `hello`/`full` handshake tells a latecomer the
+  room is taken → they see an "already in use" state. Once the partner leaves,
+  the room is spent (no rebind) → terminal `left`.
+- **Idle auto-teardown**: after `IDLE_MS` (5 min) of no message activity we
+  `room.leave()` and surface `ended`; `pagehide` tears down promptly. On any
+  terminal state the in-memory transcript is wiped, so even the live tab goes
+  blank. New `clearRoomKeyFromUrl()` + a "Start a new chat" reset drops the spent
+  link from the address bar.
+- Status enum now: `connecting | connected | left | full | ended | error`.
+  Build ~31.6 KB gzipped JS.
+
+Caveats / deferred:
+- Treating a peer-leave as terminal is deliberately strict here; **Phase 6**
+  softens transient drops (iOS backgrounding) with reconnection.
+- Single-use enforcement is best-effort under a simultaneous 3-way join race
+  (no coordinator); the privacy guarantee (a third party can't read messages)
+  holds regardless because sends are peer-targeted.
 
 ### ⬜ Phase 6 — Connectivity
 - ICE config: public STUN + Cloudflare TURN credentials (via `.env`, see below).
