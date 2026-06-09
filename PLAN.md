@@ -111,8 +111,12 @@ Files changed: `src/app.jsx`, `src/styles/global.css`. Build ~6.9 KB gzipped JS.
 - `src/useConnection.js`: a hook that joins a Trystero room (`trystero/nostr`,
   serverless signaling over public Nostr relays) keyed by the URL room key and
   opens a WebRTC DataChannel directly to the other peer.
-- The room key doubles as the Trystero `password`, so the SDP/ICE handshake is
-  encrypted on the relays; the data path is DTLS-encrypted by WebRTC itself.
+- The room key doubles as the Trystero `password` (encrypting the SDP/ICE
+  handshake on the relays) **when `crypto.subtle` is available** — i.e. in a
+  secure context. Over plain http on a LAN IP (the documented phone-test path)
+  subtle crypto is absent, so we skip that layer rather than fail to connect; the
+  key is still an unguessable capability and the data path is DTLS-encrypted by
+  WebRTC regardless.
 - Surfaces `status`: `connecting → connected → left` (plus `error` if signaling
   can't start), driven by `onPeerJoin` / `onPeerLeave`. Strictly 1:1: once the
   only peer leaves we treat the chat as over.

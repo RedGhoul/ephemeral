@@ -23,6 +23,14 @@ import { useConnection } from './useConnection.js';
 import { ShareLink } from './components/ShareLink.jsx';
 import { Chat } from './components/Chat.jsx';
 
+/**
+ * Monotonic per-tab message id. Deliberately not `crypto.randomUUID()`, which is
+ * undefined in insecure contexts (e.g. testing over plain http on a LAN IP) — a
+ * counter is unique within the tab and works everywhere. Ids are local-only.
+ */
+let msgSeq = 0;
+const nextMsgId = () => `m${msgSeq++}`;
+
 export function App() {
   // Decide once, from the URL. A key already in the fragment means we arrived
   // via someone's link → join as guest. Otherwise we start at home.
@@ -88,7 +96,7 @@ function ChatRoom({ roomKey, isHost }) {
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: nextMsgId(),
             text: String(payload?.text ?? ''),
             ts: Number(payload?.ts) || Date.now(),
             mine: false,
@@ -103,7 +111,7 @@ function ChatRoom({ roomKey, isHost }) {
     send({ text, ts });
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), text, ts, mine: true },
+      { id: nextMsgId(), text, ts, mine: true },
     ]);
   }
 

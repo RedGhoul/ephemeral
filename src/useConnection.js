@@ -36,8 +36,17 @@ export function useConnection(roomKey) {
 
     let room;
     try {
-      // Room key is both the room id and the handshake password.
-      room = joinRoom({ appId: APP_ID, password: roomKey }, roomKey);
+      // The room key is the room id. We also pass it as Trystero's `password` to
+      // encrypt the relay signaling handshake — but only where `crypto.subtle`
+      // exists (a secure context). Over plain http on a LAN IP (the documented
+      // phone-test path) subtle crypto is unavailable; we skip the extra layer
+      // rather than fail to connect. The key is still an unguessable capability,
+      // and the data path stays DTLS-encrypted by WebRTC either way.
+      const config = { appId: APP_ID };
+      if (typeof crypto !== 'undefined' && crypto.subtle) {
+        config.password = roomKey;
+      }
+      room = joinRoom(config, roomKey);
     } catch {
       setStatus('error');
       return undefined;
