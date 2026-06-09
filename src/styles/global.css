@@ -95,25 +95,157 @@ body {
   padding: 16px calc(16px + var(--safe-right)) 16px calc(16px + var(--safe-left));
 }
 
-.placeholder {
+/* --- Panes (home / host / guest states) ------------------------------------ */
+.pane {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.pane-center {
   align-items: center;
   justify-content: center;
   text-align: center;
+  gap: 16px;
+}
+
+.pane-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 20px;
+  margin: 0;
+}
+
+.pane-sub {
+  margin: 0;
+  max-width: 38ch;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
-.placeholder-title {
-  color: var(--text);
+/* --- Buttons --------------------------------------------------------------- */
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 12px 18px;
+  font: inherit;
   font-weight: 600;
-  margin: 0 0 4px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.06s ease, opacity 0.15s ease;
 }
 
-.placeholder-sub {
-  margin: 0;
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0b0b0f;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 16px;
+}
+
+/* --- Shareable link -------------------------------------------------------- */
+.share {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link-field {
+  appearance: none;
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px 14px;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.link-text {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.share-actions .btn {
+  flex: 1 1 0;
+}
+
+/* --- Waiting / connecting --------------------------------------------------- */
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
   font-size: 14px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* --- Connection status dot ------------------------------------------------- */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.status-dot-ok {
+  background: #36d399;
+  box-shadow: 0 0 0 4px rgba(54, 211, 153, 0.18);
+}
+
+.status-dot-off {
+  background: var(--text-dim);
 }
 
 /* --- Composer / footer ----------------------------------------------------- */
@@ -125,8 +257,111 @@ body {
   background: var(--surface);
 }
 
-.composer-hint {
-  color: var(--text-dim);
-  font-size: 13px;
+.composer-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.composer-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 11px 16px;
+  font: inherit;
+  font-size: 16px; /* keep >=16px to avoid iOS focus auto-zoom */
+}
+
+.composer-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composer-send {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 11px 18px;
+}
+
+.composer-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- Message list + bubbles ------------------------------------------------ */
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.empty {
+  margin: auto; /* centers within the flex column */
   text-align: center;
+  color: var(--text-dim);
+}
+
+.empty-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.empty-sub {
+  margin: 0;
+  font-size: 14px;
+}
+
+.bubble-row {
+  display: flex;
+}
+
+.bubble-row.mine {
+  justify-content: flex-end;
+}
+
+.bubble-row.theirs {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* let long words/URLs wrap instead of forcing horizontal scroll */
+  overflow-wrap: anywhere;
+}
+
+.bubble-row.mine .bubble {
+  background: var(--accent);
+  color: #0b0b0f;
+  border-bottom-right-radius: 5px;
+}
+
+.bubble-row.theirs .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+}
+
+.bubble-text {
+  white-space: pre-wrap; /* preserve the sender's line breaks */
+}
+
+.bubble-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.bubble-row.theirs .bubble-time {
+  color: var(--text-dim);
+  opacity: 1;
 }

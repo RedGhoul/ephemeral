@@ -7,7 +7,7 @@ peer-to-peer.
 
 > **For future sessions:** this file is the source of truth for decisions and
 > progress. Update the **Phase status** section as work lands. Development
-> happens on branch `claude/magical-knuth-FAtRD`.
+> happens on branch `claude/relaxed-faraday-ssgj7f`.
 
 ---
 
@@ -91,24 +91,89 @@ Files: `index.html`, `package.json`, `vite.config.js`, `.gitignore`,
 Run locally: `npm install && npm run dev`, then open the printed LAN URL on a
 phone on the same Wi-Fi.
 
-### 🔜 Phase 2 — Room + link flow
-- "Start a chat" generates a high-entropy room key → URL `#fragment`.
-- Render shareable link with copy + native share-sheet (`navigator.share`) button.
-- "Waiting for the other person…" state.
-- Joining via an existing link reads the room key from the fragment.
+### ✅ Phase 2 — Room + link flow
+- App routes between three in-memory states decided from the URL fragment:
+  **home** (no key), **host** (we minted the room), **guest** (opened a link).
+- "Start a chat" mints a 128-bit room key via `crypto.getRandomValues`,
+  base64url-encoded, and writes it to the URL `#fragment` with
+  `history.replaceState` (no history entry).
+- Shareable link rendered with a tap-to-copy field, a Clipboard-API copy button
+  (with "Copied ✓" feedback + manual-select fallback), and the native share
+  sheet (`navigator.share`) when available.
+- "Waiting for the other person…" (host) and "Joining the chat…" (guest)
+  states — placeholders that the phase-3 connection wires into.
+- Fragment never hits a server; the link is the capability. No persistence APIs.
 
-### ⬜ Phase 3 — P2P connection
-- Wire up Trystero: join room from link, open DataChannel.
-- Surface connection status (connecting / connected / peer left).
+Files added: `src/room.js`, `src/components/ShareLink.jsx`.
+Files changed: `src/app.jsx`, `src/styles/global.css`. Build ~6.9 KB gzipped JS.
 
-### ⬜ Phase 4 — Chat UI
-- Message bubbles, text input, send-on-enter, auto-scroll.
-- Typing indicator, timestamps. All state in memory only.
+### ✅ Phase 3 — P2P connection
+- `src/useConnection.js`: a hook that joins a Trystero room (`trystero/nostr`,
+  serverless signaling over public Nostr relays) keyed by the URL room key and
+  opens a WebRTC DataChannel directly to the other peer.
+- The room key doubles as the Trystero `password` (encrypting the SDP/ICE
+  handshake on the relays) **when `crypto.subtle` is available** — i.e. in a
+  secure context. Over plain http on a LAN IP (the documented phone-test path)
+  subtle crypto is absent, so we skip that layer rather than fail to connect; the
+  key is still an unguessable capability and the data path is DTLS-encrypted by
+  WebRTC regardless.
+- Surfaces `status`: `connecting → connected → left` (plus `error` if signaling
+  can't start), driven by `onPeerJoin` / `onPeerLeave`. Strictly 1:1: once the
+  only peer leaves we treat the chat as over.
+- Exposes `send` / `subscribe` as the message surface the phase-4 chat UI
+  consumes. Connection torn down (`room.leave()`) on unmount.
+- `app.jsx` now routes **home → room**, and inside a room renders by live
+  status: host-waiting (link still shown) / guest-joining / connected /
+  peer-left / error. Bundle ~30.6 KB gzipped JS (Trystero signaling included).
 
-### ⬜ Phase 5 — Ephemerality hardening
-- Assert no persistence APIs are used for messages.
-- Optional single-use links (room consumed after first pair connects).
-- Idle auto-teardown so a re-visit is provably blank.
+Note: a real two-phone WebRTC handshake can't be exercised headlessly here;
+verified via build + dev-server module-graph smoke test. Confirm on two phones.
+
+### ✅ Phase 4 — Chat UI
+- `src/components/Chat.jsx`: the connected conversation — scrollable message
+  list of bubbles (mine vs theirs, with local timestamps) + composer. It renders
+  both the `<main>` (messages) and `<footer>` (composer); other states render a
+  centered pane with no composer.
+- Composer is a `<form>` → Enter sends (with `enterkeyhint="send"`), send button
+  disabled while empty; input kept at 16px to dodge iOS focus auto-zoom.
+- List auto-scrolls to the newest message; long words/URLs wrap; sender line
+  breaks preserved (`white-space: pre-wrap`).
+- `app.jsx`/`ChatRoom` holds the message list in memory: `subscribe` appends
+  incoming (parsed defensively), `handleSend` echoes locally + `send`s `{text,ts}`
+  over the DataChannel. Closing/reloading the tab drops everything — ephemeral
+  by construction; text is rendered via Preact (auto-escaped), no XSS surface.
+- `useConnection`: `send`/`subscribe` memoized (`useCallback`) so the message
+  subscription doesn't churn on every render. Build ~31.2 KB gzipped JS.
+
+Deferred from this phase: a typing indicator (needs a second Trystero action +
+debounce) — slot it in during Phase 7 polish.
+
+### ✅ Phase 5 — Ephemerality hardening
+- **No-persistence assertion**: `scripts/check-no-persistence.mjs` scans `src/`
+  (comments stripped) for `localStorage` / `sessionStorage` / `indexedDB` /
+  `openDatabase` / `document.cookie` / `caches` and fails on any hit. Wired as a
+  `prebuild` step so `npm run build` can't ship a regression. (Confirmed Trystero
+  itself touches none of these either.)
+- **Single-use / strict 1:1** in `useConnection`: bind to the first peer and
+  only exchange messages with that peer — **targeted sends + sender filtering**,
+  so a third party who opens the same link joins the relay topic but receives
+  nothing (can't eavesdrop). A `hello`/`full` handshake tells a latecomer the
+  room is taken → they see an "already in use" state. Once the partner leaves,
+  the room is spent (no rebind) → terminal `left`.
+- **Idle auto-teardown**: after `IDLE_MS` (5 min) of no message activity we
+  `room.leave()` and surface `ended`; `pagehide` tears down promptly. On any
+  terminal state the in-memory transcript is wiped, so even the live tab goes
+  blank. New `clearRoomKeyFromUrl()` + a "Start a new chat" reset drops the spent
+  link from the address bar.
+- Status enum now: `connecting | connected | left | full | ended | error`.
+  Build ~31.6 KB gzipped JS.
+
+Caveats / deferred:
+- Treating a peer-leave as terminal is deliberately strict here; **Phase 6**
+  softens transient drops (iOS backgrounding) with reconnection.
+- Single-use enforcement is best-effort under a simultaneous 3-way join race
+  (no coordinator); the privacy guarantee (a third party can't read messages)
+  holds regardless because sends are peer-targeted.
 
 ### ⬜ Phase 6 — Connectivity
 - ICE config: public STUN + Cloudflare TURN credentials (via `.env`, see below).
@@ -121,7 +186,7 @@ phone on the same Wi-Fi.
 
 ## Operational notes
 
-- **Branch:** all work on `claude/magical-knuth-FAtRD`. Commit + push when a
+- **Branch:** all work on `claude/relaxed-faraday-ssgj7f`. Commit + push when a
   phase completes.
 - **TURN credentials** will live in `.env` (gitignored). An `.env.example` will
   document the required keys when Phase 6 lands. Cloudflare TURN free tier is the

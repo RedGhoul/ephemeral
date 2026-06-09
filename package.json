@@ -6,11 +6,14 @@
   "description": "Stateless, anonymous, ephemeral peer-to-peer chat for mobile browsers",
   "scripts": {
     "dev": "vite",
+    "check:ephemeral": "node scripts/check-no-persistence.mjs",
+    "prebuild": "npm run check:ephemeral",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "preact": "^10.25.4"
+    "preact": "^10.25.4",
+    "trystero": "^0.25.1"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.4",
